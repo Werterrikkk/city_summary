@@ -1,64 +1,40 @@
 import argparse
-import json
-import re
 import sys
 
 from clients.exceptions import ExternalServiceError, NotFoundError
-from processing.service import CitySummary, build_city_summary
+from processing.service import build_city_summary
 
 
-def city_argument(value: str) -> str:
-    value = value.strip()
-    if len(value) < 2:
-        raise argparse.ArgumentTypeError(
-            "Название города должно содержать хотя бы 2 символа"
-        )
-    return value
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Сводка по городу")
+    parser.add_argument("--city", required=True, help="Название города")
+    parser.add_argument(
+        "--currency", default="USD", help="Код валюты, например USD или EUR"
+    )
+    args = parser.parse_args()
+    city = args.city.strip()
+    currency = args.currency.strip().upper()
+    if len(city) < 2:
+        parser.error("Введите название города")
+    if len(currency) != 3 or not currency.isascii() or not currency.isalpha():
+        parser.error("Код валюты должен состоять из трёх латинских букв")
 
+    try:
+        summary = build_city_summary(city, currency)
+    except NotFoundError as error:
+        print(error, file=sys.stderr)
+        return 3
+    except ExternalServiceError as error:
+        print(error, file=sys.stderr)
+        return 4
 
-def currency_argument(value: str) -> str:
-    value = value.strip().upper()
-    if not re.fullmatch(r"[A-Z]{3}", value):
-        raise argparse.ArgumentTypeError("Валюта должна быть ISO-кодом из трёх букв")
-    return value
-
-
-def format_summary(summary: CitySummary) -> str:
     weather = summary["weather"]
     rates = summary["rates"]
-    return "\n".join(
-        [
-            f"Город: {summary['city']}",
-            f"Погода: {weather['temp_c']:.1f}°C, {weather['description']}",
-            f"Тёплая одежда: {'да' if weather['warm_clothes'] else 'нет'}",
-            f"{rates['currency']}→RUB: {rates['rate_to_rub']:.2f}",
-            f"Дорогой курс: {'да' if rates['expensive'] else 'нет'}",
-        ]
-    )
-
-
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Погода и курс валюты для города")
-    parser.add_argument(
-        "--city", required=True, type=city_argument, help="Название города"
-    )
-    parser.add_argument(
-        "--currency", default="USD", type=currency_argument, help="ISO-код валюты"
-    )
-    parser.add_argument("--json", action="store_true", help="Вывести сводку в JSON")
-    args = parser.parse_args(argv)
-    try:
-        summary = build_city_summary(args.city, args.currency)
-    except NotFoundError as exc:
-        print(f"Ошибка: {exc}", file=sys.stderr)
-        return 3
-    except ExternalServiceError as exc:
-        print(f"Ошибка: {exc}", file=sys.stderr)
-        return 4
-    if args.json:
-        print(json.dumps(summary, ensure_ascii=False, indent=2, allow_nan=False))
-    else:
-        print(format_summary(summary))
+    print(f"Город: {summary['city']}")
+    print(f"Погода: {weather['temp_c']}°C, {weather['description']}")
+    print(f"Тёплая одежда: {'да' if weather['warm_clothes'] else 'нет'}")
+    print(f"{rates['currency']}→RUB: {rates['rate_to_rub']:.2f}")
+    print(f"Дорогой курс: {'да' if rates['expensive'] else 'нет'}")
     return 0
 
 
